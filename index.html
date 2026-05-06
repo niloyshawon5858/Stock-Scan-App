@@ -718,14 +718,46 @@ function toast(msg, type='info') {
 }
 
 function showScriptCode() {
-  navigator.clipboard.writeText(SCRIPT_CODE).then(() => {
-    toast('Apps Script code copied!', 'success');
-  }).catch(() => {
-    prompt('Copy this code:', SCRIPT_CODE);
-  });
+  document.getElementById('codeModal').style.display = 'flex';
+  document.getElementById('codeBox').value = SCRIPT_CODE;
+}
+
+function closeModal() {
+  document.getElementById('codeModal').style.display = 'none';
+}
+
+function copyCode() {
+  const box = document.getElementById('codeBox');
+  box.select();
+  box.setSelectionRange(0, 99999);
+  try {
+    document.execCommand('copy');
+    toast('Code copied!', 'success');
+  } catch(e) {
+    navigator.clipboard.writeText(SCRIPT_CODE).then(() => toast('Code copied!', 'success')).catch(() => toast('Select all text above and copy manually', 'info'));
+  }
 }
 
 renderProducts();
 </script>
+<!-- CODE MODAL -->
+<div id="codeModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:999; align-items:flex-end; justify-content:center;">
+  <div style="background:var(--surface); border:1px solid var(--border2); border-radius:var(--radius) var(--radius) 0 0; padding:20px; width:100%; max-width:600px; max-height:80vh; display:flex; flex-direction:column; gap:14px;">
+    <div style="display:flex; align-items:center; justify-content:space-between;">
+      <div style="font-weight:600; font-size:15px;">Apps Script Code</div>
+      <button class="btn btn-secondary btn-sm" onclick="closeModal()">✕ Close</button>
+    </div>
+    <div style="font-size:12px; color:var(--text2); line-height:1.6;">
+      Tap the button below to copy, or tap &amp; hold the text box → Select All → Copy.
+    </div>
+    <textarea id="codeBox" readonly
+      style="flex:1; min-height:220px; background:var(--bg); border:1px solid var(--border2);
+             border-radius:var(--radius-sm); padding:12px; color:var(--accent);
+             font-family:'DM Mono',monospace; font-size:12px; line-height:1.6;
+             resize:none; outline:none; -webkit-user-select:all; user-select:all;"></textarea>
+    <button class="btn btn-primary" onclick="copyCode()">📋 Copy to clipboard</button>
+  </div>
+</div>
+
 </body>
 </html>
