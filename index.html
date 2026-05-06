@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>StockScan — Inventory Scanner</title>
+<script src="https://unpkg.com/@zxing/library@latest/umd/index.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #222535;
+    --border: rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.15);
+    --accent: #4ade80;
+    --accent-dim: rgba(74,222,128,0.12);
+    --accent-glow: rgba(74,222,128,0.25);
+    --danger: #f87171;
+    --danger-dim: rgba(248,113,113,0.12);
+    --amber: #fbbf24;
+    --amber-dim: rgba(251,191,36,0.12);
+    --text: #f1f5f9;
+    --text2: #94a3b8;
+    --text3: #4b5563;
+    --radius: 14px;
+    --radius-sm: 8px;
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 15px;
+    overscroll-behavior: none;
+  }
+
+  body { display: flex; flex-direction: column; min-height: 100vh; }
+
+  /* HEADER */
+  .header {
+    padding: 18px 20px 14px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    position: sticky; top: 0; z-index: 100;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-icon {
+    width: 34px; height: 34px; border-radius: 9px;
+    background: var(--accent); display: flex; align-items: center; justify-content: center;
+  }
+  .logo-icon svg { width: 18px; height: 18px; color: #0f1117; }
+  .logo-text { font-size: 17px; font-weight: 600; letter-spacing: -0.3px; }
+  .logo-text span { color: var(--accent); }
+  .header-status {
+    font-size: 12px; color: var(--text2);
+    background: var(--surface2); border: 1px solid var(--border);
+    padding: 4px 10px; border-radius: 20px;
+    font-family: 'DM Mono', monospace;
+  }
+  .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--text3); margin-right: 5px; vertical-align: middle; }
+  .dot.live { background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: pulse 2s infinite; }
+
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+
+  /* TABS */
+  .tabs {
+    display: flex; gap: 0;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .tab {
+    flex: 1; padding: 13px; text-align: center;
+    font-size: 13px; font-weight: 500; color: var(--text2);
+    cursor: pointer; border-bottom: 2px solid transparent;
+    transition: all 0.2s; letter-spacing: 0.2px;
+  }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); background: var(--accent-dim); }
+  .tab:hover:not(.active) { color: var(--text); background: var(--surface2); }
+
+  /* PANELS */
+  .panel { display: none; flex-direction: column; flex: 1; padding: 16px; gap: 14px; }
+  .panel.active { display: flex; }
+
+  /* CAMERA VIEW */
+  .camera-wrap {
+    position: relative; border-radius: var(--radius);
+    overflow: hidden; background: #000;
+    border: 1px solid var(--border2);
+    aspect-ratio: 4/3; max-height: 300px;
+  }
+  .camera-wrap video {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+  }
+  .scan-overlay {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  .scan-frame {
+    width: 60%; aspect-ratio: 1;
+    border: 2px solid var(--accent);
+    border-radius: 12px;
+    box-shadow: 0 0 0 9999px rgba(0,0,0,0.45);
+    position: relative;
+  }
+  .scan-line {
+    position: absolute; left: 6px; right: 6px;
+    height: 2px; background: var(--accent);
+    top: 50%; opacity: 0.8;
+    animation: scanline 2s ease-in-out infinite;
+    box-shadow: 0 0 8px var(--accent);
+  }
+  @keyframes scanline {
+    0%,100%{top:15%} 50%{top:85%}
+  }
+  .scan-corner {
+    position: absolute; width: 18px; height: 18px;
+    border-color: var(--accent); border-style: solid;
+  }
+  .scan-corner.tl { top: -2px; left: -2px; border-width: 3px 0 0 3px; border-radius: 6px 0 0 0; }
+  .scan-corner.tr { top: -2px; right: -2px; border-width: 3px 3px 0 0; border-radius: 0 6px 0 0; }
+  .scan-corner.bl { bottom: -2px; left: -2px; border-width: 0 0 3px 3px; border-radius: 0 0 0 6px; }
+  .scan-corner.br { bottom: -2px; right: -2px; border-width: 0 3px 3px 0; border-radius: 0 0 6px 0; }
+
+  .camera-placeholder {
+    aspect-ratio: 4/3; max-height: 300px;
+    border-radius: var(--radius);
+    border: 1px dashed var(--border2);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 12px; color: var(--text2); text-align: center; padding: 20px;
+  }
+  .camera-placeholder svg { opacity: 0.4; }
+
+  /* RESULT CARD */
+  .result-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px; gap: 12px;
+    display: flex; flex-direction: column;
+  }
+  .result-card.found { border-color: rgba(74,222,128,0.3); background: var(--accent-dim); }
+  .result-card.new-item { border-color: rgba(251,191,36,0.3); background: var(--amber-dim); }
+  .result-label {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.8px;
+    text-transform: uppercase; color: var(--text2);
+  }
+  .barcode-display {
+    font-family: 'DM Mono', monospace;
+    font-size: 18px; font-weight: 500;
+    color: var(--text); letter-spacing: 2px;
+  }
+  .status-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 500;
+  }
+  .badge-found { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(74,222,128,0.3); }
+  .badge-new { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(251,191,36,0.3); }
+
+  /* FORM */
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
+  label { font-size: 12px; font-weight: 500; color: var(--text2); letter-spacing: 0.3px; }
+  input[type=text], input[type=number], input[type=search] {
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius-sm);
+    padding: 11px 14px; color: var(--text);
+    font-family: 'DM Sans', sans-serif; font-size: 15px;
+    outline: none; transition: border-color 0.2s;
+    -webkit-appearance: none;
+  }
+  input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+  input::placeholder { color: var(--text3); }
+
+  .btn {
+    padding: 13px 20px; border-radius: var(--radius-sm);
+    font-family: 'DM Sans', sans-serif; font-size: 15px; font-weight: 500;
+    cursor: pointer; border: none; transition: all 0.15s; letter-spacing: 0.1px;
+  }
+  .btn-primary {
+    background: var(--accent); color: #0f1117;
+    box-shadow: 0 4px 15px var(--accent-glow);
+  }
+  .btn-primary:hover { filter: brightness(1.05); transform: translateY(-1px); }
+  .btn-primary:active { transform: translateY(0); }
+  .btn-secondary {
+    background: var(--surface2); color: var(--text);
+    border: 1px solid var(--border2);
+  }
+  .btn-secondary:hover { background: var(--surface); border-color: var(--accent); }
+  .btn-danger { background: var(--danger-dim); color: var(--danger); border: 1px solid rgba(248,113,113,0.3); }
+  .btn-sm { padding: 8px 14px; font-size: 13px; border-radius: var(--radius-sm); }
+
+  .btn-row { display: flex; gap: 10px; }
+  .btn-row .btn { flex: 1; }
+
+  /* SCAN BTN */
+  .scan-btn-wrap { display: flex; justify-content: center; }
+  .scan-btn {
+    width: 72px; height: 72px; border-radius: 50%;
+    background: var(--accent); border: 4px solid var(--bg);
+    box-shadow: 0 0 0 2px var(--accent), 0 6px 24px var(--accent-glow);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .scan-btn:hover { transform: scale(1.05); box-shadow: 0 0 0 2px var(--accent), 0 8px 32px var(--accent-glow); }
+  .scan-btn.scanning { background: var(--danger); box-shadow: 0 0 0 2px var(--danger), 0 6px 24px rgba(248,113,113,0.3); }
+  .scan-btn svg { color: #0f1117; width: 28px; height: 28px; }
+
+  /* TOAST */
+  .toast-wrap { position: fixed; top: 70px; left: 50%; transform: translateX(-50%); z-index: 999; display: flex; flex-direction: column; gap: 8px; width: 90%; max-width: 380px; pointer-events: none; }
+  .toast {
+    padding: 12px 16px; border-radius: var(--radius-sm);
+    font-size: 14px; font-weight: 500;
+    display: flex; align-items: center; gap: 10px;
+    animation: toastIn 0.3s ease; pointer-events: none;
+  }
+  .toast.success { background: #14532d; color: #86efac; border: 1px solid rgba(74,222,128,0.4); }
+  .toast.error { background: #450a0a; color: #fca5a5; border: 1px solid rgba(248,113,113,0.4); }
+  .toast.info { background: #1e1b4b; color: #a5b4fc; border: 1px solid rgba(165,180,252,0.4); }
+  @keyframes toastIn { from{opacity:0;transform:translateY(-10px)} to{opacity:1;transform:translateY(0)} }
+
+  /* PRODUCT LIST */
+  .search-wrap { position: relative; }
+  .search-wrap svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text3); width: 16px; height: 16px; }
+  .search-wrap input { padding-left: 38px; }
+
+  .product-list { display: flex; flex-direction: column; gap: 8px; }
+  .product-item {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 13px 15px;
+    display: flex; align-items: center; gap: 12px;
+    transition: border-color 0.2s; cursor: pointer;
+  }
+  .product-item:hover { border-color: var(--border2); }
+  .product-thumb {
+    width: 40px; height: 40px; border-radius: 8px;
+    background: var(--surface2); display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; font-size: 18px;
+  }
+  .product-info { flex: 1; min-width: 0; }
+  .product-name { font-weight: 500; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .product-barcode { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text2); margin-top: 2px; }
+  .product-price { font-weight: 600; color: var(--accent); font-size: 15px; flex-shrink: 0; }
+  .product-actions { display: flex; gap: 6px; }
+
+  /* SETTINGS */
+  .settings-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px;
+  }
+  .settings-title { font-size: 13px; font-weight: 600; color: var(--text2); letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 14px; }
+  .settings-row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+  .settings-row:last-child { margin-bottom: 0; }
+  .settings-hint { font-size: 12px; color: var(--text3); line-height: 1.5; }
+
+  .divider { height: 1px; background: var(--border); margin: 4px 0; }
+  .empty-state { text-align: center; padding: 40px 20px; color: var(--text3); font-size: 14px; }
+  .empty-state svg { margin: 0 auto 12px; display: block; opacity: 0.3; }
+  .count-badge { background: var(--accent); color: #0f1117; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 20px; margin-left: 6px; }
+</style>
+</head>
+<body>
+
+<div class="toast-wrap" id="toastWrap"></div>
+
+<header class="header">
+  <div class="logo">
+    <div class="logo-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+        <path d="M3 5h4M3 9h4M3 13h4M3 17h4M11 5h2M11 9h2M11 13h2M11 17h2M17 5h4M17 9h4M17 13h4M17 17h4"/>
+      </svg>
+    </div>
+    <span class="logo-text">Stock<span>Scan</span></span>
+  </div>
+  <div class="header-status" id="headerStatus">
+    <span class="dot" id="statusDot"></span><span id="statusText">Ready</span>
+  </div>
+</header>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('scan')">📷 Scan</div>
+  <div class="tab" onclick="switchTab('products')">📦 Products</div>
+  <div class="tab" onclick="switchTab('settings')">⚙️ Settings</div>
+</div>
+
+<!-- SCAN PANEL -->
+<div class="panel active" id="panel-scan">
+  <div id="cameraPlaceholder" class="camera-placeholder">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+      <circle cx="12" cy="13" r="4"/>
+    </svg>
+    <div>
+      <div style="font-weight:500; color: var(--text);">Camera ready</div>
+      <div style="font-size:13px; margin-top:4px;">Press the button below to start scanning</div>
+    </div>
+  </div>
+
+  <div id="cameraView" class="camera-wrap" style="display:none;">
+    <video id="video" autoplay muted playsinline></video>
+    <div class="scan-overlay">
+      <div class="scan-frame">
+        <div class="scan-line"></div>
+        <div class="scan-corner tl"></div>
+        <div class="scan-corner tr"></div>
+        <div class="scan-corner bl"></div>
+        <div class="scan-corner br"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="scan-btn-wrap">
+    <div class="scan-btn" id="scanBtn" onclick="toggleScan()">
+      <svg id="scanIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+        <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M8 12h8"/>
+      </svg>
+    </div>
+  </div>
+
+  <!-- Result area -->
+  <div id="resultArea" style="display:none;">
+    <div class="result-card" id="resultCard">
+      <div style="display:flex; align-items:center; justify-content:space-between;">
+        <div>
+          <div class="result-label">Scanned barcode</div>
+          <div class="barcode-display" id="resultBarcode">—</div>
+        </div>
+        <div class="status-badge" id="resultBadge"></div>
+      </div>
+      <div class="divider"></div>
+      <div id="foundProduct" style="display:none;">
+        <div class="form-group">
+          <label>Product name</label>
+          <div id="foundName" style="font-weight:500; font-size:15px;"></div>
+        </div>
+        <div class="form-group">
+          <label>Price</label>
+          <div id="foundPrice" style="font-weight:600; font-size:20px; color:var(--accent);"></div>
+        </div>
+        <div class="btn-row" style="margin-top:4px;">
+          <button class="btn btn-primary" onclick="confirmFound()">✓ Confirm scan</button>
+          <button class="btn btn-secondary" onclick="resetScan()">Cancel</button>
+        </div>
+      </div>
+      <div id="newProductForm" style="display:none; display:flex; flex-direction:column; gap:12px;">
+        <div class="form-group">
+          <label>Product name</label>
+          <input type="text" id="newName" placeholder="Enter product name…">
+        </div>
+        <div class="form-group">
+          <label>Price (৳)</label>
+          <input type="number" id="newPrice" placeholder="0.00" min="0" step="0.01">
+        </div>
+        <div class="form-group">
+          <label>Category (optional)</label>
+          <input type="text" id="newCategory" placeholder="e.g. Beverages, Snacks…">
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="saveNewProduct()">Save & Submit</button>
+          <button class="btn btn-secondary" onclick="resetScan()">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Manual entry -->
+  <div style="display:flex; align-items:center; gap:12px;">
+    <div class="divider" style="flex:1;"></div>
+    <span style="font-size:12px; color:var(--text3);">or enter manually</span>
+    <div class="divider" style="flex:1;"></div>
+  </div>
+  <div style="display:flex; gap:10px;">
+    <input type="text" id="manualBarcode" placeholder="Type barcode…" style="flex:1;" onkeydown="if(event.key==='Enter')manualLookup()">
+    <button class="btn btn-secondary" onclick="manualLookup()" style="white-space:nowrap;">Look up</button>
+  </div>
+</div>
+
+<!-- PRODUCTS PANEL -->
+<div class="panel" id="panel-products">
+  <div class="search-wrap">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    <input type="search" id="searchInput" placeholder="Search products…" oninput="renderProducts()">
+  </div>
+  <div style="display:flex; align-items:center; justify-content:space-between;">
+    <div style="font-size:13px; color:var(--text2);" id="productCount">0 products</div>
+    <button class="btn btn-secondary btn-sm" onclick="exportCSV()">⬇ Export CSV</button>
+  </div>
+  <div class="product-list" id="productList"></div>
+</div>
+
+<!-- SETTINGS PANEL -->
+<div class="panel" id="panel-settings">
+  <div class="settings-card">
+    <div class="settings-title">Google Sheets</div>
+    <div class="settings-row">
+      <label>Apps Script Web App URL</label>
+      <input type="text" id="scriptUrl" placeholder="https://script.google.com/macros/s/…/exec">
+      <div class="settings-hint">Deploy your Google Apps Script as a web app and paste the URL here. Data will be written directly to your Sheet.</div>
+    </div>
+    <button class="btn btn-primary" style="width:100%;" onclick="saveSettings()">Save settings</button>
+  </div>
+
+  <div class="settings-card">
+    <div class="settings-title">About</div>
+    <div class="settings-row">
+      <div style="font-size:13px; color:var(--text2); line-height:1.7;">
+        <strong style="color:var(--text);">StockScan</strong> — Free barcode scanner for inventory management.<br>
+        Works offline. Data syncs to Google Sheets when connected.<br><br>
+        Barcode scanning powered by <strong style="color:var(--text);">ZXing</strong>.<br>
+        No server. No subscription. Fully open-source.
+      </div>
+    </div>
+  </div>
+
+  <div class="settings-card">
+    <div class="settings-title">Setup instructions</div>
+    <div style="font-size:13px; color:var(--text2); line-height:1.8;">
+      <strong style="color:var(--text);">1.</strong> Open Google Sheets → Tools → Apps Script<br>
+      <strong style="color:var(--text);">2.</strong> Paste the Apps Script code (see below)<br>
+      <strong style="color:var(--text);">3.</strong> Deploy → New deployment → Web app<br>
+      <strong style="color:var(--text);">4.</strong> Set access to <em>"Anyone"</em><br>
+      <strong style="color:var(--text);">5.</strong> Copy the URL into settings above
+    </div>
+    <div style="margin-top:12px;">
+      <button class="btn btn-secondary btn-sm" onclick="showScriptCode()">📋 Copy Apps Script code</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SCRIPT_CODE = `function doPost(e) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var data = JSON.parse(e.postData.contents);
+  if (data.action === 'lookup') {
+    var values = sheet.getDataRange().getValues();
+    for (var i = 1; i < values.length; i++) {
+      if (values[i][0] == data.barcode) {
+        return ContentService.createTextOutput(JSON.stringify({
+          found: true, name: values[i][1], price: values[i][2], category: values[i][3]
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+    return ContentService.createTextOutput(JSON.stringify({found: false})).setMimeType(ContentService.MimeType.JSON);
+  }
+  if (data.action === 'add') {
+    sheet.appendRow([data.barcode, data.name, data.price, data.category || '', new Date()]);
+    return ContentService.createTextOutput(JSON.stringify({success: true})).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function doGet(e) {
+  return ContentService.createTextOutput('StockScan API ready').setMimeType(ContentService.MimeType.TEXT);
+}`;
+
+let products = JSON.parse(localStorage.getItem('stockscan_products') || '[]');
+let settings = JSON.parse(localStorage.getItem('stockscan_settings') || '{}');
+let scanning = false;
+let codeReader = null;
+let lastScanned = null;
+
+function save() {
+  localStorage.setItem('stockscan_products', JSON.stringify(products));
+}
+
+function saveSettings() {
+  settings.scriptUrl = document.getElementById('scriptUrl').value.trim();
+  localStorage.setItem('stockscan_settings', JSON.stringify(settings));
+  toast('Settings saved!', 'success');
+}
+
+document.getElementById('scriptUrl').value = settings.scriptUrl || '';
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach((t,i) => {
+    t.classList.toggle('active', ['scan','products','settings'][i] === tab);
+  });
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-' + tab).classList.add('active');
+  if (tab === 'products') renderProducts();
+}
+
+// SCANNING
+async function toggleScan() {
+  if (scanning) {
+    stopScan();
+  } else {
+    startScan();
+  }
+}
+
+async function startScan() {
+  try {
+    const { BrowserBarcodeReader } = ZXing;
+    codeReader = new BrowserBarcodeReader();
+    const devices = await codeReader.listVideoInputDevices();
+    const deviceId = devices.find(d => d.label.toLowerCase().includes('back'))?.deviceId || devices[0]?.deviceId;
+    if (!deviceId) { toast('No camera found', 'error'); return; }
+
+    document.getElementById('cameraPlaceholder').style.display = 'none';
+    document.getElementById('cameraView').style.display = 'block';
+    scanning = true;
+    updateScanBtn(true);
+
+    await codeReader.decodeFromVideoDevice(deviceId, 'video', (result, err) => {
+      if (result) {
+        handleBarcode(result.getText());
+      }
+    });
+  } catch(e) {
+    toast('Camera error: ' + e.message, 'error');
+    stopScan();
+  }
+}
+
+function stopScan() {
+  if (codeReader) { try { codeReader.reset(); } catch(e){} codeReader = null; }
+  scanning = false;
+  document.getElementById('cameraPlaceholder').style.display = 'flex';
+  document.getElementById('cameraView').style.display = 'none';
+  updateScanBtn(false);
+  setStatus(false, 'Ready');
+}
+
+function updateScanBtn(active) {
+  const btn = document.getElementById('scanBtn');
+  const icon = document.getElementById('scanIcon');
+  btn.classList.toggle('scanning', active);
+  if (active) {
+    icon.innerHTML = `<rect x="3" y="3" width="18" height="18" rx="3"/>`;
+    setStatus(true, 'Scanning…');
+  } else {
+    icon.innerHTML = `<path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M8 12h8"/>`;
+  }
+}
+
+function setStatus(live, text) {
+  document.getElementById('statusDot').className = 'dot' + (live ? ' live' : '');
+  document.getElementById('statusText').textContent = text;
+}
+
+async function handleBarcode(code) {
+  if (code === lastScanned) return;
+  lastScanned = code;
+  if (navigator.vibrate) navigator.vibrate(60);
+
+  // Look up locally first
+  const local = products.find(p => p.barcode === code);
+  if (local) {
+    showFound(code, local);
+    return;
+  }
+
+  // Try remote
+  if (settings.scriptUrl) {
+    try {
+      const res = await fetch(settings.scriptUrl, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'lookup', barcode: code })
+      });
+      const data = await res.json();
+      if (data.found) {
+        showFound(code, data);
+        return;
+      }
+    } catch(e) {}
+  }
+
+  showNewForm(code);
+}
+
+function showFound(code, product) {
+  stopScan();
+  document.getElementById('resultArea').style.display = 'block';
+  document.getElementById('resultBarcode').textContent = code;
+  document.getElementById('resultCard').className = 'result-card found';
+  document.getElementById('resultBadge').innerHTML = `<span class="status-badge badge-found">✓ Found</span>`;
+  document.getElementById('foundName').textContent = product.name;
+  document.getElementById('foundPrice').textContent = '৳ ' + parseFloat(product.price).toFixed(2);
+  document.getElementById('foundProduct').style.display = 'flex';
+  document.getElementById('foundProduct').style.flexDirection = 'column';
+  document.getElementById('foundProduct').style.gap = '10px';
+  document.getElementById('newProductForm').style.display = 'none';
+}
+
+function showNewForm(code) {
+  stopScan();
+  document.getElementById('resultArea').style.display = 'block';
+  document.getElementById('resultBarcode').textContent = code;
+  document.getElementById('resultCard').className = 'result-card new-item';
+  document.getElementById('resultBadge').innerHTML = `<span class="status-badge badge-new">+ New</span>`;
+  document.getElementById('foundProduct').style.display = 'none';
+  document.getElementById('newProductForm').style.display = 'flex';
+  document.getElementById('newProductForm').style.flexDirection = 'column';
+  document.getElementById('newProductForm').style.gap = '12px';
+  document.getElementById('newName').value = '';
+  document.getElementById('newPrice').value = '';
+  document.getElementById('newCategory').value = '';
+  setTimeout(() => document.getElementById('newName').focus(), 100);
+}
+
+function confirmFound() {
+  toast('Scan confirmed!', 'success');
+  resetScan();
+}
+
+async function saveNewProduct() {
+  const barcode = document.getElementById('resultBarcode').textContent.trim();
+  const name = document.getElementById('newName').value.trim();
+  const price = parseFloat(document.getElementById('newPrice').value);
+  const category = document.getElementById('newCategory').value.trim();
+
+  if (!name) { toast('Please enter a product name', 'error'); return; }
+  if (isNaN(price) || price < 0) { toast('Please enter a valid price', 'error'); return; }
+
+  const product = { barcode, name, price, category, addedAt: new Date().toISOString() };
+  products.push(product);
+  save();
+
+  if (settings.scriptUrl) {
+    try {
+      await fetch(settings.scriptUrl, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'add', ...product })
+      });
+      toast('Saved to Google Sheet!', 'success');
+    } catch(e) {
+      toast('Saved locally (Sheet sync failed)', 'info');
+    }
+  } else {
+    toast('Product saved locally!', 'success');
+  }
+
+  resetScan();
+  renderProducts();
+}
+
+function resetScan() {
+  lastScanned = null;
+  document.getElementById('resultArea').style.display = 'none';
+  document.getElementById('manualBarcode').value = '';
+  setStatus(false, 'Ready');
+}
+
+function manualLookup() {
+  const code = document.getElementById('manualBarcode').value.trim();
+  if (!code) return;
+  handleBarcode(code);
+}
+
+// PRODUCTS
+function renderProducts() {
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  const filtered = products.filter(p =>
+    p.name.toLowerCase().includes(q) || p.barcode.includes(q) || (p.category||'').toLowerCase().includes(q)
+  );
+  const list = document.getElementById('productList');
+  document.getElementById('productCount').innerHTML = `${filtered.length} product${filtered.length !== 1 ? 's' : ''}`;
+
+  if (!filtered.length) {
+    list.innerHTML = `<div class="empty-state">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+      ${q ? 'No products match your search' : 'No products yet — start scanning!'}
+    </div>`;
+    return;
+  }
+
+  const emojis = ['📦','🍎','🥤','🧴','🍫','🥛','🧃','🍕'];
+  list.innerHTML = filtered.map((p, i) => `
+    <div class="product-item">
+      <div class="product-thumb">${emojis[i % emojis.length]}</div>
+      <div class="product-info">
+        <div class="product-name">${p.name}${p.category ? ` <span style="font-size:11px;color:var(--text3);">${p.category}</span>` : ''}</div>
+        <div class="product-barcode">${p.barcode}</div>
+      </div>
+      <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px;">
+        <div class="product-price">৳${parseFloat(p.price).toFixed(2)}</div>
+        <button class="btn btn-danger btn-sm" onclick="deleteProduct('${p.barcode}')">✕</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function deleteProduct(barcode) {
+  if (!confirm('Delete this product?')) return;
+  products = products.filter(p => p.barcode !== barcode);
+  save();
+  renderProducts();
+  toast('Product deleted', 'info');
+}
+
+function exportCSV() {
+  if (!products.length) { toast('No products to export', 'info'); return; }
+  const rows = [['Barcode','Name','Price','Category','Added']];
+  products.forEach(p => rows.push([p.barcode, p.name, p.price, p.category||'', p.addedAt||'']));
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
+  a.download = 'stockscan-export.csv';
+  a.click();
+  toast('CSV downloaded!', 'success');
+}
+
+// TOAST
+function toast(msg, type='info') {
+  const wrap = document.getElementById('toastWrap');
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  const icons = { success:'✓', error:'✕', info:'ℹ' };
+  el.innerHTML = `<span>${icons[type]||'ℹ'}</span> ${msg}`;
+  wrap.appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+function showScriptCode() {
+  navigator.clipboard.writeText(SCRIPT_CODE).then(() => {
+    toast('Apps Script code copied!', 'success');
+  }).catch(() => {
+    prompt('Copy this code:', SCRIPT_CODE);
+  });
+}
+
+renderProducts();
+</script>
+</body>
+</html>
